@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual envs
+venv/
+env/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data & models (don't push large processed files)
+data/processed/
+models/
+*.joblib
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Packaging / build
+dist/
+build/
+*.egg-info/
+
+# Logs
+logs/
