@@ -79,6 +79,13 @@ def main():
             i: (total / (num_classes * max(1, cnt))) for i, cnt in enumerate(train_counts)
         }
         print("Using class weights:", class_weight)
+        # Convert to per-example sample weights to avoid Keras bug with class_weight
+        weight_vec = tf.constant([class_weight[i] for i in range(len(class_weight))], dtype=tf.float32)
+        train_ds_sw = train_ds.map(
+            lambda x, y: (x, y, tf.gather(weight_vec, tf.cast(y, tf.int32))),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
+        train_ds = train_ds_sw
 
     # === CALLBACKS ===
     # Learning rate schedule: cosine decay
@@ -111,7 +118,7 @@ def main():
         validation_data=val_ds,
         epochs=args.epochs,
         callbacks=callbacks,
-        class_weight=class_weight,
+        # class_weight not used; per-example sample weights are provided by dataset
     )
 
     # === SAVE PLOTS ===
