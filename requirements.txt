@@ -6,3 +6,4 @@ opencv-python
 tqdm
 pandas
 kaggle
+numpy
