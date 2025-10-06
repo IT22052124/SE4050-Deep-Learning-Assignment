@@ -94,17 +94,17 @@ def main():
         cw1 = float(class_weight.get(1, 1.0))
 
         def weighted_bce(y_true, y_pred):
-            y_true_int = tf.cast(tf.squeeze(y_true), tf.int32)
-            # Build per-sample weights based on class label
-            weights = tf.where(tf.equal(y_true_int, 1), tf.constant(cw1, tf.float32), tf.constant(cw0, tf.float32))
             y_true_f = tf.cast(y_true, tf.float32)
-            # Match shapes if model outputs (batch,1)
-            if tf.rank(y_pred) == 2 and tf.shape(y_pred)[-1] == 1:
-                weights_b = tf.cast(tf.expand_dims(weights, -1), y_pred.dtype)
-            else:
-                weights_b = tf.cast(weights, y_pred.dtype)
-            bce = tf.keras.losses.binary_crossentropy(y_true_f, y_pred)
-            return tf.reduce_mean(bce * weights_b)
+            y_pred_f = tf.cast(y_pred, tf.float32)
+            # Ensure shapes match (e.g., (B,) -> (B,1) to match model output)
+            y_true_f = tf.reshape(y_true_f, tf.shape(y_pred_f))
+            # Clip to avoid log(0)
+            y_pred_f = tf.clip_by_value(y_pred_f, 1e-7, 1.0 - 1e-7)
+            # Weighted BCE formula
+            pos_term = -cw1 * y_true_f * tf.math.log(y_pred_f)
+            neg_term = -cw0 * (1.0 - y_true_f) * tf.math.log(1.0 - y_pred_f)
+            loss = pos_term + neg_term
+            return tf.reduce_mean(loss)
 
         loss_fn = weighted_bce
 
