@@ -47,7 +47,8 @@ def main():
     os.makedirs(os.path.join(args.results_dir, "gradcam"), exist_ok=True)
 
     # Load datasets with the same split logic
-    _, _, test_ds, class_names = create_datasets(
+    # create_datasets now returns (train, val, test, class_names, train_counts)
+    _, _, test_ds, class_names, _ = create_datasets(
         args.data_dir, batch_size=args.batch_size, img_size=tuple(args.img_size), allowed_classes=args.classes
     )
 
