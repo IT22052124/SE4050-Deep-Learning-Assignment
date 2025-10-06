@@ -16,7 +16,10 @@ def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
         return
 
     images, labels = batch
-    _ = model(images[:1], training=False)  # build model so model.input/output are defined
+    # Build model so model.inputs/outputs are defined
+    _ = model(images[:1], training=False)
+    if getattr(model, 'inputs', None) in (None, [], ()) or getattr(model, 'outputs', None) in (None, [], ()): 
+        _ = model(images[:1], training=False)
 
     # Find last Conv2D layer in the built model
     last_conv_layer = None
@@ -29,7 +32,9 @@ def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
         return
 
     target = last_conv_layer.output
-    grad_model = tf.keras.models.Model(inputs=[model.input], outputs=[target, model.output])
+    in_tensor = model.inputs[0] if isinstance(model.inputs, (list, tuple)) else model.inputs
+    out_tensor = model.outputs[0] if isinstance(model.outputs, (list, tuple)) else model.outputs
+    grad_model = tf.keras.models.Model(inputs=[in_tensor], outputs=[target, out_tensor])
 
     # Generate heatmaps for up to num_images from this batch
     num = min(num_images, images.shape[0])
