@@ -41,6 +41,13 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=int(os.getenv("BATCH_SIZE", 32)))
     parser.add_argument("--epochs", type=int, default=int(os.getenv("EPOCHS", 30)))
     parser.add_argument("--img_size", type=int, nargs=2, default=(224, 224))
+    parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="*",
+        default=os.getenv("CLASSES", "yes no").split(),
+        help="Restrict to these class folders (order defines label mapping)",
+    )
     return parser.parse_args()
 
 
@@ -50,8 +57,8 @@ def main():
 
     # === LOAD DATA ===
     augment = get_augmentation_pipeline()
-    train_ds, val_ds, test_ds, class_names = create_datasets(
-        args.data_dir, args.batch_size, tuple(args.img_size), augment
+    train_ds, val_ds, test_ds, class_names, train_counts = create_datasets(
+        args.data_dir, args.batch_size, tuple(args.img_size), augment, allowed_classes=args.classes
     )
 
     # Persist class names for evaluation scripts
@@ -62,7 +69,31 @@ def main():
     model = build_cnn_model((*args.img_size, 3))
     model.summary()
 
+    # === CLASS WEIGHTS (to mitigate class imbalance) ===
+    total = sum(train_counts) if train_counts else 0
+    class_weight = None
+    if total > 0:
+        # Inverse frequency: weight_i = total / (num_classes * count_i)
+        num_classes = len(train_counts)
+        class_weight = {
+            i: (total / (num_classes * max(1, cnt))) for i, cnt in enumerate(train_counts)
+        }
+        print("Using class weights:", class_weight)
+
     # === CALLBACKS ===
+    # Learning rate schedule: cosine decay
+    initial_lr = 1e-3
+    lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=initial_lr, decay_steps=max(1, args.epochs) * 100
+    )
+
+    # Recompile model with LR schedule
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+        loss=model.loss,
+        metrics=model.metrics,
+    )
+
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             filepath=os.path.join(args.results_dir, "best_model.h5"),
@@ -76,7 +107,11 @@ def main():
 
     # === TRAIN ===
     history = model.fit(
-        train_ds, validation_data=val_ds, epochs=args.epochs, callbacks=callbacks
+        train_ds,
+        validation_data=val_ds,
+        epochs=args.epochs,
+        callbacks=callbacks,
+        class_weight=class_weight,
     )
 
     # === SAVE PLOTS ===

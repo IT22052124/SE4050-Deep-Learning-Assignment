@@ -32,6 +32,13 @@ def parse_args():
     )
     parser.add_argument("--batch_size", type=int, default=int(os.getenv("BATCH_SIZE", 32)))
     parser.add_argument("--img_size", type=int, nargs=2, default=(224, 224))
+    parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="*",
+        default=os.getenv("CLASSES", "yes no").split(),
+        help="Restrict to these class folders (order defines label mapping)",
+    )
     return parser.parse_args()
 
 
@@ -41,7 +48,7 @@ def main():
 
     # Load datasets with the same split logic
     _, _, test_ds, class_names = create_datasets(
-        args.data_dir, batch_size=args.batch_size, img_size=tuple(args.img_size)
+        args.data_dir, batch_size=args.batch_size, img_size=tuple(args.img_size), allowed_classes=args.classes
     )
 
     # Fall back to saved class names if present
@@ -74,7 +81,12 @@ def main():
 
     # Confusion matrix
     cm = confusion_matrix(y_true, y_pred)
-    ConfusionMatrixDisplay(cm, display_labels=class_names).plot(cmap="Blues")
+    # Ensure labels length matches matrix shape
+    display_labels = class_names
+    if len(display_labels) != cm.shape[0]:
+        # Fallback to numeric labels if mismatch occurs
+        display_labels = list(map(str, range(cm.shape[0])))
+    ConfusionMatrixDisplay(cm, display_labels=display_labels).plot(cmap="Blues")
     plt.title("Confusion Matrix - CNN")
     plt.savefig(os.path.join(args.results_dir, "confusion_matrix.png"))
     plt.close()
