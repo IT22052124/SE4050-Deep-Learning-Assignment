@@ -67,13 +67,14 @@ def main():
     keras_path = os.path.join(args.results_dir, "best_model.keras")
     h5_path = os.path.join(args.results_dir, "best_model.h5")
     if os.path.exists(keras_path):
-        model = tf.keras.models.load_model(keras_path)
+        model = tf.keras.models.load_model(keras_path, compile=False)
     elif os.path.exists(h5_path):
         model = tf.keras.models.load_model(h5_path, compile=False)
-        # Ensure the model is compiled for predict; metrics not needed
-        model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]) 
     else:
         raise FileNotFoundError(f"No model checkpoint found at {keras_path} or {h5_path}")
+
+    # Compile with standard loss/metric for evaluation and predict
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]) 
 
     # Predict
     y_true, y_pred = [], []
