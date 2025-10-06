@@ -6,6 +6,16 @@ import matplotlib.pyplot as plt
 
 def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
     os.makedirs(save_dir, exist_ok=True)
+    # Ensure model is built: run a tiny forward pass if needed
+    try:
+        needs_build = (not getattr(model, 'built', False)) or (getattr(model, 'inputs', None) in (None, [], ()))
+    except Exception:
+        needs_build = True
+    if needs_build:
+        for images, _ in dataset.take(1):
+            _ = model(images[:1])
+            break
+
     # Try to find the last conv layer for Grad-CAM
     last_conv = None
     for layer in reversed(model.layers):
