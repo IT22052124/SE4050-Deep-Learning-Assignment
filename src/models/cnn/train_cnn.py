@@ -1,0 +1,104 @@
+"""
+Training entrypoint for the simple CNN.
+
+Now supports passing paths and hyperparameters via CLI args or env vars, so it can run easily in Colab.
+
+Expected dataset layout for --data_dir:
+  data_dir/
+    yes/
+      img1.jpg ...
+    no/
+      img2.jpg ...
+
+The loader will create train/val/test splits internally.
+"""
+
+# src/models/cnn/train_cnn.py
+import os
+import json
+import argparse
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from src.models.cnn.build_cnn import build_cnn_model
+from src.common.dataset_utils import create_datasets
+from src.common.preprocessing import get_augmentation_pipeline
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train CNN for Brain Tumor classification")
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=os.getenv("DATA_DIR", "/content/drive/MyDrive/BrainTumor"),
+        help="Folder containing class subfolders (yes/no)",
+    )
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default=os.getenv("RESULTS_DIR", "/content/drive/MyDrive/brain_tumor_project/results/cnn"),
+        help="Folder to write checkpoints and plots",
+    )
+    parser.add_argument("--batch_size", type=int, default=int(os.getenv("BATCH_SIZE", 32)))
+    parser.add_argument("--epochs", type=int, default=int(os.getenv("EPOCHS", 30)))
+    parser.add_argument("--img_size", type=int, nargs=2, default=(224, 224))
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    os.makedirs(args.results_dir, exist_ok=True)
+
+    # === LOAD DATA ===
+    augment = get_augmentation_pipeline()
+    train_ds, val_ds, test_ds, class_names = create_datasets(
+        args.data_dir, args.batch_size, tuple(args.img_size), augment
+    )
+
+    # Persist class names for evaluation scripts
+    with open(os.path.join(args.results_dir, "class_names.json"), "w") as f:
+        json.dump(class_names, f, indent=2)
+
+    # === BUILD MODEL ===
+    model = build_cnn_model((*args.img_size, 3))
+    model.summary()
+
+    # === CALLBACKS ===
+    callbacks = [
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(args.results_dir, "best_model.h5"),
+            monitor="val_loss",
+            save_best_only=True,
+        ),
+        tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=5, restore_best_weights=True
+        ),
+    ]
+
+    # === TRAIN ===
+    history = model.fit(
+        train_ds, validation_data=val_ds, epochs=args.epochs, callbacks=callbacks
+    )
+
+    # === SAVE PLOTS ===
+    plt.figure(figsize=(8, 4))
+    plt.plot(history.history.get("accuracy", []), label="Train")
+    plt.plot(history.history.get("val_accuracy", []), label="Val")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(args.results_dir, "history.png"))
+
+    # Save last epoch metrics for quick reference
+    metrics_out = {
+        "val_acc": float(history.history.get("val_accuracy", [None])[-1] or 0.0),
+        "train_acc": float(history.history.get("accuracy", [None])[-1] or 0.0),
+    }
+    with open(os.path.join(args.results_dir, "metrics.json"), "w") as f:
+        json.dump(metrics_out, f, indent=4)
+
+    print("✅ Training complete. Best model saved to:", args.results_dir)
+
+
+if __name__ == "__main__":
+    main()
