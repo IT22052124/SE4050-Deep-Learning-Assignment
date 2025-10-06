@@ -28,3 +28,14 @@ build/
 
 # Logs
 logs/
+
+data/archive/
+data/processed/
+*.zip
+*.tar
+*.h5
+*.ckpt
+*.pkl
+__pycache__/
+.ipynb_checkpoints/
+
