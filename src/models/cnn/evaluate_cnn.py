@@ -105,10 +105,96 @@ def main():
     rep = classification_report(y_true, y_pred, target_names=class_names)
     with open(os.path.join(args.results_dir, "classification_report.txt"), "w") as f:
         f.write(rep)
+        
+    # Create a visual classification report
+    try:
+        from sklearn.metrics import precision_score, recall_score, f1_score
+        import seaborn as sns
+        
+        metrics = {
+            'Precision': precision_score(y_true, y_pred, average=None),
+            'Recall': recall_score(y_true, y_pred, average=None),
+            'F1-Score': f1_score(y_true, y_pred, average=None)
+        }
+        
+        plt.figure(figsize=(10, 6))
+        for i, metric_name in enumerate(metrics.keys()):
+            plt.subplot(1, 3, i+1)
+            values = metrics[metric_name]
+            sns.barplot(x=class_names, y=values)
+            plt.title(metric_name)
+            plt.ylim(0, 1)
+            plt.xticks(rotation=45)
+            
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.results_dir, "metrics_by_class.png"))
+        plt.close()
+    except Exception as e:
+        print(f"⚠️ Error generating classification metrics visualization: {e}")
 
     # Append/Write metrics
     metrics_path = os.path.join(args.results_dir, "metrics.json")
     metrics = {"test_acc": float(acc)}
+    
+    # Generate ROC curve and precision-recall curve
+    try:
+        # Get raw probabilities for the curves
+        y_true_roc, y_prob_roc = [], []
+        for imgs, labels in test_ds:
+            probs = model.predict(imgs, verbose=0)
+            y_true_roc.extend(labels.numpy())
+            y_prob_roc.extend(probs.flatten())
+            
+        y_true_roc = np.array(y_true_roc)
+        y_prob_roc = np.array(y_prob_roc)
+        
+        # Import necessary metrics from sklearn
+        from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
+        
+        # ROC curve
+        fpr, tpr, _ = roc_curve(y_true_roc, y_prob_roc)
+        roc_auc = auc(fpr, tpr)
+        metrics["roc_auc"] = float(roc_auc)
+        
+        plt.figure(figsize=(10, 8))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.3f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic (ROC)')
+        plt.legend(loc="lower right")
+        plt.grid(True, alpha=0.3)
+        plt.savefig(os.path.join(args.results_dir, "roc_curve.png"))
+        plt.close()
+        
+        # Precision-Recall curve
+        precision, recall, _ = precision_recall_curve(y_true_roc, y_prob_roc)
+        pr_auc = auc(recall, precision)
+        average_precision = average_precision_score(y_true_roc, y_prob_roc)
+        metrics["pr_auc"] = float(pr_auc)
+        metrics["average_precision"] = float(average_precision)
+        
+        plt.figure(figsize=(10, 8))
+        plt.plot(recall, precision, color='blue', lw=2, 
+                label=f'Precision-Recall curve (AP = {average_precision:.3f})')
+        plt.axhline(y=sum(y_true_roc)/len(y_true_roc), color='red', linestyle='--', 
+                   label=f'No Skill ({sum(y_true_roc)/len(y_true_roc):.3f})')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve')
+        plt.legend(loc="upper right")
+        plt.grid(True, alpha=0.3)
+        plt.savefig(os.path.join(args.results_dir, "precision_recall_curve.png"))
+        plt.close()
+        
+        print(f"✅ ROC AUC: {roc_auc:.4f}, Average Precision: {average_precision:.4f}")
+    except Exception as e:
+        print(f"⚠️ Error generating ROC/PR curves: {e}")
+    
     try:
         if os.path.exists(metrics_path):
             with open(metrics_path) as f:
@@ -119,7 +205,8 @@ def main():
         else:
             with open(metrics_path, "w") as f:
                 json.dump(metrics, f, indent=4)
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ Error saving metrics: {e}")
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=4)
 
