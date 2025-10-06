@@ -39,12 +39,26 @@ def load_image_paths(data_dir, allowed_classes=None):
 def create_splits(filepaths, labels, test_size=0.15, val_size=0.15, seed=42):
     t_files, te_files, t_labels, te_labels = train_test_split(filepaths, labels, test_size=test_size, stratify=labels, random_state=seed)
     tr_files, va_files, tr_labels, va_labels = train_test_split(t_files, t_labels, test_size=val_size/(1-test_size), stratify=t_labels, random_state=seed)
+    # Quick diagnostics
+    def counts(lbls):
+        from collections import Counter
+        return dict(Counter(lbls))
+    print("Split sizes:", {
+        'train': len(tr_files), 'val': len(va_files), 'test': len(te_files)
+    })
+    print("Train label counts:", counts(tr_labels))
+    print("Val label counts:", counts(va_labels))
+    print("Test label counts:", counts(te_labels))
     return (tr_files, tr_labels), (va_files, va_labels), (te_files, te_labels)
 
 def preprocess_image(path, label, img_size=(224,224)):
-    img = tf.io.read_file(path)
-    img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.resize(img, img_size)/255.0
+    img_bytes = tf.io.read_file(path)
+    # decode_image supports PNG/JPEG, sets dynamic shape; we fix shape after resize
+    img = tf.io.decode_image(img_bytes, channels=3, expand_animations=False)
+    img = tf.image.resize(img, img_size)
+    img = tf.cast(img, tf.float32) / 255.0
+    # Ensure static channel dimension for downstream layers
+    img.set_shape([img_size[0], img_size[1], 3])
     return img, label
 
 def make_dataset(files, labels, class_names, batch_size=32, shuffle=True, augment_fn=None):

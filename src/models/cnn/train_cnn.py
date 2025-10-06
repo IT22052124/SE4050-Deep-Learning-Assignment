@@ -79,13 +79,6 @@ def main():
             i: (total / (num_classes * max(1, cnt))) for i, cnt in enumerate(train_counts)
         }
         print("Using class weights:", class_weight)
-        # Convert to per-example sample weights to avoid Keras bug with class_weight
-        weight_vec = tf.constant([class_weight[i] for i in range(len(class_weight))], dtype=tf.float32)
-        train_ds_sw = train_ds.map(
-            lambda x, y: (x, y, tf.gather(weight_vec, tf.cast(y, tf.int32))),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
-        train_ds = train_ds_sw
 
     # === CALLBACKS ===
     # Learning rate schedule: cosine decay
@@ -94,11 +87,32 @@ def main():
         initial_learning_rate=initial_lr, decay_steps=max(1, args.epochs) * 100
     )
 
-    # Recompile model with LR schedule
+    # Prepare loss (use weighted BCE if class weights available)
+    loss_fn = tf.keras.losses.BinaryCrossentropy()
+    if class_weight is not None:
+        cw0 = float(class_weight.get(0, 1.0))
+        cw1 = float(class_weight.get(1, 1.0))
+
+        def weighted_bce(y_true, y_pred):
+            y_true_int = tf.cast(tf.squeeze(y_true), tf.int32)
+            # Build per-sample weights based on class label
+            weights = tf.where(tf.equal(y_true_int, 1), tf.constant(cw1, tf.float32), tf.constant(cw0, tf.float32))
+            y_true_f = tf.cast(y_true, tf.float32)
+            # Match shapes if model outputs (batch,1)
+            if tf.rank(y_pred) == 2 and tf.shape(y_pred)[-1] == 1:
+                weights_b = tf.cast(tf.expand_dims(weights, -1), y_pred.dtype)
+            else:
+                weights_b = tf.cast(weights, y_pred.dtype)
+            bce = tf.keras.losses.binary_crossentropy(y_true_f, y_pred)
+            return tf.reduce_mean(bce * weights_b)
+
+        loss_fn = weighted_bce
+
+    # Recompile model with LR schedule and selected loss
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
-        loss=model.loss,
-        metrics=model.metrics,
+        loss=loss_fn,
+        metrics=['accuracy'],
     )
 
     callbacks = [
@@ -118,7 +132,6 @@ def main():
         validation_data=val_ds,
         epochs=args.epochs,
         callbacks=callbacks,
-        # class_weight not used; per-example sample weights are provided by dataset
     )
 
     # === SAVE PLOTS ===

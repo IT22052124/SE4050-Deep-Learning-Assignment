@@ -6,10 +6,19 @@ import matplotlib.pyplot as plt
 
 def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
     os.makedirs(save_dir, exist_ok=True)
-    grad_model = tf.keras.models.Model(
-        [model.inputs],
-        [model.get_layer(index=-3).output, model.output]
-    )
+    # Try to find the last conv layer for Grad-CAM
+    last_conv = None
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            last_conv = layer.name
+            break
+    if last_conv is None:
+        # Fallback: try index -3 as in the original code
+        target = model.get_layer(index=-3).output
+    else:
+        target = model.get_layer(last_conv).output
+
+    grad_model = tf.keras.models.Model([model.inputs], [target, model.output])
 
     for images, labels in dataset.take(1):
         for i in range(num_images):
