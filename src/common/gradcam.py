@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
     os.makedirs(save_dir, exist_ok=True)
 
-    # Grab one batch to infer image size and to visualize
+    # Grab one batch and ensure the model is built by a forward pass
     batch = None
     for batch in dataset.take(1):
         pass
@@ -16,16 +16,9 @@ def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
         return
 
     images, labels = batch
-    h, w = images.shape[1], images.shape[2]
-    if h is None or w is None:
-        # Fallback to common default if static dims not available
-        h, w = 224, 224
+    _ = model(images[:1], training=False)  # build model so model.input/output are defined
 
-    # Build a functional graph using a fresh Input bound to (h,w,3)
-    inputs = tf.keras.Input(shape=(int(h), int(w), 3))
-    outputs = model(inputs)
-
-    # Find last Conv2D layer
+    # Find last Conv2D layer in the built model
     last_conv_layer = None
     for layer in reversed(model.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
@@ -36,7 +29,7 @@ def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
         return
 
     target = last_conv_layer.output
-    grad_model = tf.keras.models.Model(inputs=[inputs], outputs=[target, outputs])
+    grad_model = tf.keras.models.Model(inputs=[model.input], outputs=[target, model.output])
 
     # Generate heatmaps for up to num_images from this batch
     num = min(num_images, images.shape[0])
