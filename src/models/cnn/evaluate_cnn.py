@@ -63,9 +63,17 @@ def main():
         except Exception:
             pass
 
-    # Load model
-    model_path = os.path.join(args.results_dir, "best_model.h5")
-    model = tf.keras.models.load_model(model_path)
+    # Load model: prefer native Keras format, fallback to H5 (compile=False)
+    keras_path = os.path.join(args.results_dir, "best_model.keras")
+    h5_path = os.path.join(args.results_dir, "best_model.h5")
+    if os.path.exists(keras_path):
+        model = tf.keras.models.load_model(keras_path)
+    elif os.path.exists(h5_path):
+        model = tf.keras.models.load_model(h5_path, compile=False)
+        # Ensure the model is compiled for predict; metrics not needed
+        model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]) 
+    else:
+        raise FileNotFoundError(f"No model checkpoint found at {keras_path} or {h5_path}")
 
     # Predict
     y_true, y_pred = [], []

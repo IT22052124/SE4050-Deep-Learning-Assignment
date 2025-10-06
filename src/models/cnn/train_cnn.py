@@ -117,7 +117,7 @@ def main():
 
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=os.path.join(args.results_dir, "best_model.h5"),
+            filepath=os.path.join(args.results_dir, "best_model.keras"),
             monitor="val_loss",
             save_best_only=True,
         ),
