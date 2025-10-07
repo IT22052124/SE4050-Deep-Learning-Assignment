@@ -4,12 +4,20 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-def generate_gradcam(model, dataset, save_dir, class_names, num_images=5):
+def generate_gradcam(model, dataset, save_dir, class_names, num_images=3, max_samples=None):  # max_samples allows limiting how much of the dataset to process
     os.makedirs(save_dir, exist_ok=True)
 
+    print(f"Generating Grad-CAM visualizations (limited to {num_images} images for speed)...")
     # Grab one batch and ensure the model is built by a forward pass
     batch = None
-    for batch in dataset.take(1):
+    
+    # Limit dataset processing if max_samples is provided
+    dataset_to_use = dataset
+    if max_samples is not None:
+        print(f"Using only {max_samples} batches for Grad-CAM generation")
+        dataset_to_use = dataset.take(max_samples)
+        
+    for batch in dataset_to_use.take(1):
         pass
     if batch is None:
         print("Grad-CAM: dataset is empty, skipping.")

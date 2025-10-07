@@ -46,6 +46,12 @@ def parse_args():
         choices=[0, 1],
         help="Use the processed data structure with train/val/test folders (0=auto-detect, 1=force)",
     )
+    parser.add_argument(
+        "--limit_eval",
+        type=int,
+        default=0,
+        help="Limit evaluation to specified number of batches (0=no limit, useful for faster evaluation)",
+    )
     return parser.parse_args()
 
 
@@ -94,6 +100,9 @@ def main():
     test_dir = os.path.join(args.data_dir, 'test')
     use_processed = args.use_processed == 1 or os.path.exists(test_dir)
     
+    if args.limit_eval > 0:
+        print(f"⚡ FAST MODE: Limiting evaluation to {args.limit_eval} batches for quicker results")
+    
     if use_processed and os.path.exists(test_dir):
         print(f"Using processed data structure. Test directory: {test_dir}")
         test_ds, class_names = create_test_dataset_from_processed(
@@ -133,11 +142,22 @@ def main():
 
     # Predict
     y_true, y_pred = [], []
+    batch_count = 0
+    print("Evaluating model on test data...")
+    
     for imgs, labels in test_ds:
         preds = model.predict(imgs, verbose=0)
         y_true.extend(labels.numpy())
         # Binary head: sigmoid single unit
         y_pred.extend((preds > 0.5).astype(int).flatten())
+        
+        batch_count += 1
+        print(f"Processed batch {batch_count}", end="\r")
+        
+        # If limit_eval is set, stop after processing that many batches
+        if args.limit_eval > 0 and batch_count >= args.limit_eval:
+            print(f"\nReached evaluation limit ({args.limit_eval} batches)")
+            break
 
     y_true = np.array(y_true).astype(int)
     y_pred = np.array(y_pred).astype(int)
@@ -193,15 +213,28 @@ def main():
     
     # Generate ROC curve and precision-recall curve
     try:
-        # Get raw probabilities for the curves
+        # Get raw probabilities for the curves - use a limited number of batches for faster evaluation
         y_true_roc, y_prob_roc = [], []
+        
+        # Use args.limit_eval if specified, otherwise default to 10 batches for curves
+        max_eval_batches = args.limit_eval if args.limit_eval > 0 else 10
+        batch_count = 0
+        
+        print(f"Generating predictions for ROC curve and PR curve (max {max_eval_batches} batches)...")
         for imgs, labels in test_ds:
             probs = model.predict(imgs, verbose=0)
             y_true_roc.extend(labels.numpy())
             y_prob_roc.extend(probs.flatten())
             
+            batch_count += 1
+            print(f"Processed ROC batch {batch_count}/{max_eval_batches}", end="\r")
+            if batch_count >= max_eval_batches:
+                break
+                
         y_true_roc = np.array(y_true_roc)
         y_prob_roc = np.array(y_prob_roc)
+        
+        print(f"Using {len(y_true_roc)} samples for curves (limited for speed)")
         
         # Import necessary metrics from sklearn
         from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
@@ -265,8 +298,10 @@ def main():
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=4)
 
-    # Grad-CAM
-    generate_gradcam(model, test_ds, os.path.join(args.results_dir, "gradcam"), class_names)
+    # Grad-CAM - also respect the limit_eval parameter
+    print("Generating Grad-CAM visualizations...")
+    max_gradcam_samples = args.limit_eval if args.limit_eval > 0 else None
+    generate_gradcam(model, test_ds, os.path.join(args.results_dir, "gradcam"), class_names, max_samples=max_gradcam_samples)
     print("✅ Evaluation complete.")
 
 
