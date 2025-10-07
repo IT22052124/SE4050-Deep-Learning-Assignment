@@ -20,13 +20,13 @@ def parse_args():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default=os.getenv("DATA_DIR", "/content/drive/MyDrive/brain_tumor_project/data/processed"),
+        default=os.getenv("DATA_DIR", "/content/drive/MyDrive/BrainTumor/data/processed"),
         help="Folder containing train/val/test structure",
     )
     parser.add_argument(
         "--results_dir",
         type=str,
-        default=os.getenv("RESULTS_DIR", "/content/drive/MyDrive/brain_tumor_project/results/vgg16"),
+        default=os.getenv("RESULTS_DIR", "/content/drive/MyDrive/BrainTumor/Result/vgg16"),
         help="Directory to save results",
     )
     parser.add_argument(
