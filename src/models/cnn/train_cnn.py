@@ -254,10 +254,35 @@ def main():
     if hasattr(train_ds, 'samples'):
         steps_per_epoch = train_ds.samples // args.batch_size
         print(f"Setting steps_per_epoch to: {steps_per_epoch}")
+    elif isinstance(train_ds, tf.data.Dataset):
+        # For TensorFlow Dataset, we need to explicitly set steps_per_epoch
+        # First, try to get the class counts from the original data
+        if args.use_processed:
+            yes_dir = os.path.join(args.data_dir, "train", "yes")
+            no_dir = os.path.join(args.data_dir, "train", "no")
+            if os.path.exists(yes_dir) and os.path.exists(no_dir):
+                yes_count = len(os.listdir(yes_dir))
+                no_count = len(os.listdir(no_dir))
+                total_train_images = yes_count + no_count
+                steps_per_epoch = total_train_images // args.batch_size
+                print(f"Calculated steps_per_epoch from directory contents: {steps_per_epoch}")
     
+    # Same for validation steps
     if hasattr(val_ds, 'samples'):
         validation_steps = val_ds.samples // args.batch_size
         print(f"Setting validation_steps to: {validation_steps}")
+    elif isinstance(val_ds, tf.data.Dataset) and args.use_processed:
+        yes_dir = os.path.join(args.data_dir, "val", "yes")
+        no_dir = os.path.join(args.data_dir, "val", "no")
+        if os.path.exists(yes_dir) and os.path.exists(no_dir):
+            yes_count = len(os.listdir(yes_dir))
+            no_count = len(os.listdir(no_dir))
+            total_val_images = yes_count + no_count
+            validation_steps = total_val_images // args.batch_size
+            print(f"Calculated validation_steps from directory contents: {validation_steps}")
+    
+    print(f"Final steps_per_epoch: {steps_per_epoch}")
+    print(f"Final validation_steps: {validation_steps}")
     
     history = model.fit(
         train_ds,

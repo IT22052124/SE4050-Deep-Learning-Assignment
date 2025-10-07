@@ -1,0 +1,7 @@
+<VSCode.Cell language="python">
+# Pull the latest changes from the repository
+%cd SE4050-Deep-Learning-Assignment
+!git pull
+# Show the latest commit to confirm the update
+!git log -1 --pretty=format:"Updated to: %h - %s (%an, %ar)"
+</VSCode.Cell>
