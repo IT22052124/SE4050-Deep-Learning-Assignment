@@ -22,7 +22,7 @@ def parse_args():
         "--data_dir",
         type=str,
         default=os.getenv("DATA_DIR", "/content/drive/MyDrive/BrainTumor"),
-        help="Folder containing class subfolders (yes/no)",
+        help="Folder containing class subfolders (yes/no) or train/val/test structure",
     )
     parser.add_argument(
         "--results_dir",
@@ -39,18 +39,73 @@ def parse_args():
         default=os.getenv("CLASSES", "yes no").split(),
         help="Restrict to these class folders (order defines label mapping)",
     )
+    parser.add_argument(
+        "--use_processed",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="Use the processed data structure with train/val/test folders (0=auto-detect, 1=force)",
+    )
     return parser.parse_args()
 
+
+def create_test_dataset_from_processed(test_dir, batch_size=32, img_size=(224, 224)):
+    """Create a test dataset from a directory with class subdirectories.
+    For the processed data structure where test data is in its own directory.
+    """
+    # Check for existence of expected class folders
+    yes_dir = os.path.join(test_dir, 'yes')
+    no_dir = os.path.join(test_dir, 'no')
+    
+    if not os.path.exists(yes_dir) or not os.path.exists(no_dir):
+        print(f"Warning: Expected class folders not found in {test_dir}")
+        print(f"Yes folder exists: {os.path.exists(yes_dir)}")
+        print(f"No folder exists: {os.path.exists(no_dir)}")
+        print("Available directories:")
+        for item in os.listdir(test_dir):
+            if os.path.isdir(os.path.join(test_dir, item)):
+                print(f" - {item}")
+    
+    datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    test_gen = datagen.flow_from_directory(
+        test_dir,
+        target_size=img_size,
+        batch_size=batch_size,
+        class_mode='binary',
+        shuffle=False  # Important for evaluation
+    )
+    
+    # Convert the Keras generator to a TensorFlow dataset
+    test_ds = tf.data.Dataset.from_generator(
+        lambda: test_gen,
+        output_signature=(
+            tf.TensorSpec(shape=(None, *img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
+    )
+    
+    return test_ds, list(test_gen.class_indices.keys())
 
 def main():
     args = parse_args()
     os.makedirs(os.path.join(args.results_dir, "gradcam"), exist_ok=True)
-
-    # Load datasets with the same split logic
-    # create_datasets now returns (train, val, test, class_names, train_counts)
-    _, _, test_ds, class_names, _ = create_datasets(
-        args.data_dir, batch_size=args.batch_size, img_size=tuple(args.img_size), allowed_classes=args.classes
-    )
+    
+    # Check if we should use the processed data structure
+    test_dir = os.path.join(args.data_dir, 'test')
+    use_processed = args.use_processed == 1 or os.path.exists(test_dir)
+    
+    if use_processed and os.path.exists(test_dir):
+        print(f"Using processed data structure. Test directory: {test_dir}")
+        test_ds, class_names = create_test_dataset_from_processed(
+            test_dir, batch_size=args.batch_size, img_size=tuple(args.img_size)
+        )
+    else:
+        print(f"Using original data structure with class folders directly under {args.data_dir}")
+        # Load datasets with the same split logic
+        # create_datasets now returns (train, val, test, class_names, train_counts)
+        _, _, test_ds, class_names, _ = create_datasets(
+            args.data_dir, batch_size=args.batch_size, img_size=tuple(args.img_size), allowed_classes=args.classes
+        )
 
     # Fall back to saved class names if present
     class_names_path = os.path.join(args.results_dir, "class_names.json")

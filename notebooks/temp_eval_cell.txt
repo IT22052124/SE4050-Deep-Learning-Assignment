@@ -1,0 +1,25 @@
+<VSCode.Cell language="python">
+# Evaluate the model on the test set
+print("Evaluating the CNN model...")
+
+# Choose the right directory for evaluation
+if processed_data_exists and class_folders_exist:
+    # If processed data with correct structure exists, use it
+    EVAL_DATA_DIR = PROCESSED_DATA_DIR
+    print(f"Using processed data for evaluation: {EVAL_DATA_DIR}")
+else:
+    # Fall back to the training data directory
+    EVAL_DATA_DIR = TRAIN_DATA_DIR
+    print(f"Using training data directory for evaluation: {EVAL_DATA_DIR}")
+
+print(f"Results will be saved to: {RESULTS_DIR}")
+
+# Use the enhanced evaluate_cnn script
+# The script now automatically detects whether to use the train/val/test structure
+!python -m src.models.cnn.evaluate_cnn \
+    --data_dir {EVAL_DATA_DIR} \
+    --results_dir {RESULTS_DIR} \
+    --batch_size 32 \
+    --img_size 224 224 \
+    --use_processed {1 if processed_data_exists and class_folders_exist else 0}
+</VSCode.Cell>
