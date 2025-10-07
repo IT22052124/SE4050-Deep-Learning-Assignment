@@ -246,8 +246,23 @@ def main():
     ]
 
     # === TRAIN ===
+    # Calculate steps per epoch to fix the "Unknown" progress issue
+    steps_per_epoch = None
+    validation_steps = None
+    
+    # Get steps per epoch from the generator if using ImageDataGenerator
+    if hasattr(train_ds, 'samples'):
+        steps_per_epoch = train_ds.samples // args.batch_size
+        print(f"Setting steps_per_epoch to: {steps_per_epoch}")
+    
+    if hasattr(val_ds, 'samples'):
+        validation_steps = val_ds.samples // args.batch_size
+        print(f"Setting validation_steps to: {validation_steps}")
+    
     history = model.fit(
         train_ds,
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps,
         validation_data=val_ds,
         epochs=args.epochs,
         callbacks=callbacks,
