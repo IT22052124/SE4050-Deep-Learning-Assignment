@@ -1,29 +1,101 @@
 import tensorflow as tf
 from tensorflow.keras import layers, models
+from tensorflow.keras.applications import VGG16
 
-def build_vgg16_model(input_shape=(128,128,3)):
+def build_vgg16_basic(input_shape=(224,224,3)):
     """
-    Build transfer learning model using pretrained VGG16.
+    Basic VGG16 transfer learning model - frozen base layers
     """
-    base_model = tf.keras.applications.VGG16(
+    base_model = VGG16(
         include_top=False,
         weights='imagenet',
         input_shape=input_shape
     )
-
-    base_model.trainable = False  # freeze base layers
-
+    base_model.trainable = False  # Freeze base layers
+    
     model = models.Sequential([
         base_model,
         layers.GlobalAveragePooling2D(),
         layers.Dense(256, activation='relu'),
         layers.Dropout(0.5),
-        layers.Dense(1, activation='sigmoid')  # binary classification
+        layers.Dense(1, activation='sigmoid')
     ])
-
+    
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
         loss='binary_crossentropy',
         metrics=['accuracy']
     )
     return model
+
+def build_vgg16_fine_tuned(input_shape=(224,224,3)):
+    """
+    Fine-tuned VGG16 model - unfreeze last few layers
+    """
+    base_model = VGG16(
+        include_top=False,
+        weights='imagenet',
+        input_shape=input_shape
+    )
+    
+    # Freeze early layers, unfreeze last block
+    base_model.trainable = True
+    for layer in base_model.layers[:-4]:
+        layer.trainable = False
+    
+    model = models.Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(512, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dropout(0.5),
+        layers.Dense(256, activation='relu'),
+        layers.Dropout(0.3),
+        layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.00001),  # Lower LR for fine-tuning
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    return model
+
+def build_vgg16_enhanced(input_shape=(224,224,3)):
+    """
+    Enhanced VGG16 model with additional regularization
+    """
+    base_model = VGG16(
+        include_top=False,
+        weights='imagenet',
+        input_shape=input_shape
+    )
+    base_model.trainable = False
+    
+    model = models.Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(512, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dropout(0.6),
+        layers.Dense(256, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dropout(0.4),
+        layers.Dense(128, activation='relu'),
+        layers.Dropout(0.3),
+        layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    return model
+
+# Legacy function for backward compatibility
+def build_vgg16_model(input_shape=(224,224,3)):
+    """
+    Legacy function - returns the basic VGG16 model
+    """
+    return build_vgg16_basic(input_shape)
