@@ -13,7 +13,6 @@ env/
 
 # Data & models (don't push large processed files)
 data/processed/
-models/
 *.joblib
 *.pkl
 
