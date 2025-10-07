@@ -3,14 +3,29 @@ Training entrypoint for the simple CNN.
 
 Now supports passing paths and hyperparameters via CLI args or env vars, so it can run easily in Colab.
 
-Expected dataset layout for --data_dir:
+Supports two different dataset layouts:
+
+1. Original layout:
   data_dir/
     yes/
       img1.jpg ...
     no/
       img2.jpg ...
+  The loader will create train/val/test splits internally.
 
-The loader will create train/val/test splits internally.
+2. Processed layout with predefined splits:
+  data_dir/
+    train/
+      yes/
+        img1.jpg ...
+      no/
+        img2.jpg ...
+    val/
+      yes/ ...
+      no/ ...
+    test/
+      yes/ ...
+      no/ ...
 """
 
 # src/models/cnn/train_cnn.py
@@ -30,7 +45,7 @@ def parse_args():
         "--data_dir",
         type=str,
         default=os.getenv("DATA_DIR", "/content/drive/MyDrive/BrainTumor"),
-        help="Folder containing class subfolders (yes/no)",
+        help="Folder containing class subfolders (yes/no) or train/val/test structure",
     )
     parser.add_argument(
         "--results_dir",
@@ -48,18 +63,122 @@ def parse_args():
         default=os.getenv("CLASSES", "yes no").split(),
         help="Restrict to these class folders (order defines label mapping)",
     )
+    parser.add_argument(
+        "--use_processed",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="Use the processed data structure with train/val/test folders (0=auto-detect, 1=force)",
+    )
     return parser.parse_args()
 
+
+def create_dataset_from_processed(data_path, subset, img_size=(224, 224), batch_size=32, is_training=False):
+    """Create a dataset from a directory with train/val/test structure.
+    For the processed data structure with predefined train/val/test splits.
+    """
+    subset_dir = os.path.join(data_path, subset)
+    if not os.path.exists(subset_dir):
+        raise FileNotFoundError(f"Directory not found: {subset_dir}")
+        
+    if is_training:
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+            rescale=1./255,
+            rotation_range=15,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            shear_range=0.1,
+            zoom_range=0.1,
+            horizontal_flip=True,
+            fill_mode='nearest'
+        )
+    else:
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+        
+    return datagen.flow_from_directory(
+        subset_dir,
+        target_size=img_size,
+        batch_size=batch_size,
+        class_mode='binary',
+        shuffle=is_training
+    )
+
+def create_datasets_from_processed(data_dir, batch_size=32, img_size=(224, 224)):
+    """Create datasets from a directory with train/val/test structure."""
+    # Create generators for train, val, and test sets
+    train_gen = create_dataset_from_processed(
+        data_dir, 'train', img_size, batch_size, is_training=True
+    )
+    val_gen = create_dataset_from_processed(
+        data_dir, 'val', img_size, batch_size, is_training=False
+    )
+    test_gen = create_dataset_from_processed(
+        data_dir, 'test', img_size, batch_size, is_training=False
+    )
+    
+    # Get class names
+    class_names = list(train_gen.class_indices.keys())
+    
+    # Calculate class counts for weighting
+    train_counts = [0] * len(class_names)
+    classes = train_gen.classes
+    for cls_idx in classes:
+        train_counts[cls_idx] += 1
+    
+    # Convert to TensorFlow datasets
+    train_ds = tf.data.Dataset.from_generator(
+        lambda: train_gen,
+        output_signature=(
+            tf.TensorSpec(shape=(None, *img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
+    ).prefetch(tf.data.AUTOTUNE)
+    
+    val_ds = tf.data.Dataset.from_generator(
+        lambda: val_gen,
+        output_signature=(
+            tf.TensorSpec(shape=(None, *img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
+    ).prefetch(tf.data.AUTOTUNE)
+    
+    test_ds = tf.data.Dataset.from_generator(
+        lambda: test_gen,
+        output_signature=(
+            tf.TensorSpec(shape=(None, *img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
+    ).prefetch(tf.data.AUTOTUNE)
+    
+    return train_ds, val_ds, test_ds, class_names, train_counts
 
 def main():
     args = parse_args()
     os.makedirs(args.results_dir, exist_ok=True)
 
-    # === LOAD DATA ===
-    augment = get_augmentation_pipeline()
-    train_ds, val_ds, test_ds, class_names, train_counts = create_datasets(
-        args.data_dir, args.batch_size, tuple(args.img_size), augment, allowed_classes=args.classes
+    # Check if we should use the processed data structure
+    train_dir = os.path.join(args.data_dir, 'train')
+    val_dir = os.path.join(args.data_dir, 'val')
+    test_dir = os.path.join(args.data_dir, 'test')
+    
+    use_processed = args.use_processed == 1 or (
+        os.path.exists(train_dir) and 
+        os.path.exists(val_dir) and 
+        os.path.exists(test_dir)
     )
+    
+    # === LOAD DATA ===
+    if use_processed:
+        print(f"Using processed data structure with train/val/test folders from: {args.data_dir}")
+        train_ds, val_ds, test_ds, class_names, train_counts = create_datasets_from_processed(
+            args.data_dir, args.batch_size, tuple(args.img_size)
+        )
+    else:
+        print(f"Using original data structure with class folders from: {args.data_dir}")
+        augment = get_augmentation_pipeline()
+        train_ds, val_ds, test_ds, class_names, train_counts = create_datasets(
+            args.data_dir, args.batch_size, tuple(args.img_size), augment, allowed_classes=args.classes
+        )
 
     # Persist class names for evaluation scripts
     with open(os.path.join(args.results_dir, "class_names.json"), "w") as f:
