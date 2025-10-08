@@ -1,7 +1,7 @@
 """
 Evaluation script for VGG16 brain tumor classification.
 
-Supports flexible paths and comprehensive evaluation metrics.
+Simplified version for single optimized VGG16 model evaluation.
 """
 
 import os

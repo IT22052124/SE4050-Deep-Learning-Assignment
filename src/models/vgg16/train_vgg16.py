@@ -1,8 +1,7 @@
 """
 Training script for VGG16 brain tumor classification.
 
-Supports flexible paths and hyperparameters via CLI args or env vars.
-Multiple model variants are available for comparison.
+Simplified version with single optimized VGG16 model for easy comparison.
 """
 
 import os
@@ -10,7 +9,7 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from src.models.vgg16.build_vgg16 import build_vgg16_basic, build_vgg16_fine_tuned, build_vgg16_enhanced
+from src.models.vgg16.build_vgg16 import build_vgg16_optimized
 from src.common.dataset_utils import create_datasets
 from src.common.preprocessing import get_augmentation_pipeline
 
@@ -29,13 +28,6 @@ def parse_args():
         default=os.getenv("RESULTS_DIR", "/content/drive/MyDrive/BrainTumor/Result/vgg16"),
         help="Directory to save results",
     )
-    parser.add_argument(
-        "--model_variant",
-        type=str,
-        choices=["basic", "fine_tuned", "enhanced"],
-        default="enhanced",
-        help="VGG16 model variant to train"
-    )
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate")
@@ -53,7 +45,6 @@ def main():
     print(f"🚀 Starting VGG16 training...")
     print(f"   Data directory: {args.data_dir}")
     print(f"   Results directory: {args.results_dir}")
-    print(f"   Model variant: {args.model_variant}")
     print(f"   Input size: {args.input_size}x{args.input_size}")
     print(f"   Batch size: {args.batch_size}")
     print(f"   Epochs: {args.epochs}")
@@ -69,21 +60,15 @@ def main():
     
     print(f"✅ Dataset loaded with classes: {class_names}")
     
-    # === Build Model ===
+    # === Build Single Optimized VGG16 Model ===
     input_shape = (args.input_size, args.input_size, 3)
+    model = build_vgg16_optimized(input_shape)
     
-    if args.model_variant == "basic":
-        model = build_vgg16_basic(input_shape)
-    elif args.model_variant == "fine_tuned":
-        model = build_vgg16_fine_tuned(input_shape)
-    elif args.model_variant == "enhanced":
-        model = build_vgg16_enhanced(input_shape)
-    
-    print(f"✅ Built {args.model_variant} VGG16 model")
+    print(f"✅ Built optimized VGG16 model")
     model.summary()
     
     # Save model summary
-    with open(os.path.join(args.results_dir, f"{args.model_variant}_model_summary.txt"), "w") as f:
+    with open(os.path.join(args.results_dir, "VGG16_model_summary.txt"), "w") as f:
         model.summary(print_fn=lambda x: f.write(x + "\n"))
     
     # === Callbacks ===
@@ -111,7 +96,7 @@ def main():
     ]
     
     # === Train ===
-    print(f"🏋️ Training {args.model_variant} VGG16 model...")
+    print(f"🏋️ Training VGG16 model...")
     history = model.fit(
         train_ds,
         validation_data=val_ds,
@@ -126,7 +111,7 @@ def main():
     plt.subplot(1, 2, 1)
     plt.plot(history.history['accuracy'], label='Training', linewidth=2)
     plt.plot(history.history['val_accuracy'], label='Validation', linewidth=2)
-    plt.title(f'{args.model_variant} VGG16 - Accuracy')
+    plt.title('VGG16 - Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.legend()
@@ -135,20 +120,20 @@ def main():
     plt.subplot(1, 2, 2)
     plt.plot(history.history['loss'], label='Training', linewidth=2)
     plt.plot(history.history['val_loss'], label='Validation', linewidth=2)
-    plt.title(f'{args.model_variant} VGG16 - Loss')
+    plt.title('VGG16 - Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    plt.suptitle(f'{args.model_variant} VGG16 Training History', fontsize=14, fontweight='bold')
+    plt.suptitle('VGG16 Training History', fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.savefig(os.path.join(args.results_dir, "training_plot.png"), dpi=300, bbox_inches='tight')
     plt.show()
     
     # === Save Metrics ===
     final_metrics = {
-        "model_variant": args.model_variant,
+        "model_name": "VGG16_Optimized",
         "train_accuracy": float(max(history.history['accuracy'])),
         "val_accuracy": float(max(history.history['val_accuracy'])),
         "train_loss": float(min(history.history['loss'])),
