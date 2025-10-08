@@ -48,7 +48,7 @@ def main():
     print(f"📊 Evaluating ResNet50 model from {model_path}")
 
     # === Load Data ===
-    train_ds, val_ds, test_ds, class_names = create_datasets(
+    train_ds, val_ds, test_ds, class_names, train_counts = create_datasets(
         args.data_dir,
         batch_size=args.batch_size,
         img_size=(args.input_size, args.input_size)

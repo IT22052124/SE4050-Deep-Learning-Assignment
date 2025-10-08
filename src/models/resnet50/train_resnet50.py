@@ -55,13 +55,14 @@ def main():
 
     # === Load Data ===
     augment = get_augmentation_pipeline()
-    train_ds, val_ds, test_ds, class_names = create_datasets(
+    train_ds, val_ds, test_ds, class_names, train_counts = create_datasets(
         args.data_dir,
         args.batch_size,
         img_size=(args.input_size, args.input_size),
         augment_fn=augment
     )
     print(f"✅ Dataset loaded with classes: {class_names}")
+    print(f"   Training samples per class: {train_counts}")
 
     # === Build Model ===
     input_shape = (args.input_size, args.input_size, 3)
