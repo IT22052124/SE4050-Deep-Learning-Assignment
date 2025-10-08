@@ -65,10 +65,11 @@ def main():
     os.makedirs(os.path.join(args.results_dir, "gradcam"), exist_ok=True)
     
     # === Load Data ===
-    train_ds, val_ds, test_ds, class_names = create_datasets(
+    train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
         args.data_dir, 
         batch_size=args.batch_size, 
-        img_size=(args.input_size, args.input_size)
+        img_size=(args.input_size, args.input_size),
+        allowed_classes=['no', 'yes']  # Only use binary classification classes
     )
     
     print(f"✅ Dataset loaded with classes: {class_names}")
