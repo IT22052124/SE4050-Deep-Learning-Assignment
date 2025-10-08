@@ -2,6 +2,35 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.applications import ResNet50
 
+
+def build_resnet50_optimized(input_shape=(224, 224, 3)):
+    """
+    Optimized ResNet50 model for brain tumor classification.
+    Similar architecture to VGG16 optimized version for fair comparison.
+    """
+    base_model = ResNet50(
+        include_top=False,
+        weights='imagenet',
+        input_shape=input_shape
+    )
+    base_model.trainable = False  # Freeze base layers for faster training
+
+    model = models.Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(256, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    return model
+
+
 def build_resnet50_basic(input_shape=(224, 224, 3)):
     """
     Basic ResNet50 transfer learning model - frozen base layers
