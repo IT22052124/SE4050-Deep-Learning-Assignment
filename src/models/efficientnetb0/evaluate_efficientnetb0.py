@@ -1,12 +1,11 @@
-# src/models/efficientnetb0/evaluate_efficientnetb0.py
 import os, json, argparse, numpy as np, tensorflow as tf
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from src.common.dataset_utils import create_datasets
 from src.common.gradcam import generate_gradcam
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Evaluate EfficientNetB0")
+    p = argparse.ArgumentParser(description="Evaluate EfficientNetB0 model")
     p.add_argument("--data_dir", type=str, required=True)
     p.add_argument("--results_dir", type=str, default="./results/efficientnetb0")
     p.add_argument("--batch_size", type=int, default=32)
@@ -19,8 +18,10 @@ def main():
     os.makedirs(args.results_dir, exist_ok=True)
 
     _, _, test_ds, class_names, _ = create_datasets(
-        args.data_dir, batch_size=args.batch_size,
-        img_size=tuple(args.img_size), allowed_classes=["yes","no"]
+        args.data_dir,
+        batch_size=args.batch_size,
+        img_size=tuple(args.img_size),
+        allowed_classes=["yes", "no"]
     )
 
     model_path = os.path.join(args.results_dir, "best_model.keras")
@@ -41,11 +42,17 @@ def main():
 
     cm = confusion_matrix(y_true, y_pred)
     ConfusionMatrixDisplay(cm, display_labels=class_names).plot(cmap="Blues")
+    plt.title("Confusion Matrix - EfficientNetB0")
     plt.savefig(os.path.join(args.results_dir, "confusion_matrix.png"))
+    plt.close()
 
     rep = classification_report(y_true, y_pred, target_names=class_names)
     with open(os.path.join(args.results_dir, "classification_report.txt"), "w") as f:
         f.write(rep)
+
+    # Save metrics
+    with open(os.path.join(args.results_dir, "metrics.json"), "w") as f:
+        json.dump({"test_accuracy": float(acc)}, f, indent=4)
 
     # Grad-CAM
     generate_gradcam(model, test_ds, os.path.join(args.results_dir, "gradcam"), class_names)
