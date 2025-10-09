@@ -84,3 +84,64 @@ def create_datasets(data_dir, batch_size=32, img_size=(224,224), augment_fn=None
     va = make_dataset(vaf, val, c, batch_size, False)
     te = make_dataset(tef, tel, c, batch_size, False)
     return tr, va, te, c, counts
+
+
+def create_datasets_from_preprocessed(data_dir, batch_size=32, img_size=(224,224), augment_fn=None, allowed_classes=None):
+    """
+    Load datasets from preprocessed directory structure:
+    data_dir/
+        train/
+            yes/
+            no/
+        val/
+            yes/
+            no/
+        test/
+            yes/
+            no/
+    
+    Returns: (train_ds, val_ds, test_ds, class_names, class_counts)
+    """
+    import pathlib
+    from collections import Counter
+    
+    data_dir = pathlib.Path(data_dir)
+    
+    # Check if preprocessed structure exists
+    train_dir = data_dir / "train"
+    val_dir = data_dir / "val"
+    test_dir = data_dir / "test"
+    
+    if not (train_dir.exists() and val_dir.exists() and test_dir.exists()):
+        raise ValueError(
+            f"Preprocessed data structure not found in {data_dir}\n"
+            f"Expected: train/, val/, test/ subdirectories"
+        )
+    
+    print(f"📁 Loading preprocessed data from: {data_dir}")
+    
+    # Load each split separately
+    train_files, train_labels, class_names = load_image_paths(train_dir, allowed_classes=allowed_classes)
+    val_files, val_labels, _ = load_image_paths(val_dir, allowed_classes=allowed_classes)
+    test_files, test_labels, _ = load_image_paths(test_dir, allowed_classes=allowed_classes)
+    
+    print(f"📊 Dataset split sizes:")
+    print(f"   Train: {len(train_files)} images")
+    print(f"   Val: {len(val_files)} images")
+    print(f"   Test: {len(test_files)} images")
+    
+    # Compute training label counts for class weighting
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    train_idx = [class_to_idx[name] for name in train_labels]
+    counts = [0] * len(class_names)
+    for i in train_idx:
+        counts[i] += 1
+    
+    print(f"   Class counts (train): {dict(zip(class_names, counts))}")
+    
+    # Create datasets
+    train_ds = make_dataset(train_files, train_labels, class_names, batch_size, True, augment_fn)
+    val_ds = make_dataset(val_files, val_labels, class_names, batch_size, False)
+    test_ds = make_dataset(test_files, test_labels, class_names, batch_size, False)
+    
+    return train_ds, val_ds, test_ds, class_names, counts
