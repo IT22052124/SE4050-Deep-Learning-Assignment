@@ -60,7 +60,7 @@ def main():
     print(f"   Results directory: {args.results_dir}")
     print(f"   Input size: {args.input_size}x{args.input_size}")
     print(f"   Batch size: {args.batch_size}")
-    print(f"   Epochs: {args.epochs}")
+    print(f"   Epochs (stage1/stage2): {args.epochs_stage1}/{args.epochs_stage2}")
     
     # Optional mixed precision
     if args.mixed_precision:
