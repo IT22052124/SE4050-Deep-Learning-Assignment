@@ -10,8 +10,6 @@ import argparse
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from src.models.resnet50.build_resnet50 import build_resnet50_optimized
-from src.common.dataset_utils import create_datasets, create_datasets_from_preprocessed
-from src.common.preprocessing import get_augmentation_pipeline
 
 
 def parse_args():
@@ -32,11 +30,6 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--input_size", type=int, default=224, help="Input image size (224 recommended for ResNet50)")
-    parser.add_argument(
-        "--use_preprocessed",
-        action="store_true",
-        help="Use preprocessed data with train/val/test folders (if not set, expects raw data with yes/no folders)"
-    )
     
     return parser.parse_args()
 
@@ -55,29 +48,53 @@ def main():
     print(f"   Epochs: {args.epochs}")
     
     # === Load Data ===
-    augment = get_augmentation_pipeline()
+    # Use the preprocessed data directly without additional preprocessing
+    print(f"Loading data from preprocessed directories: {args.data_dir}")
     
-    # Check if using preprocessed data or raw data
-    if args.use_preprocessed:
-        print("📂 Using preprocessed data (train/val/test structure)")
-        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets_from_preprocessed(
-            args.data_dir,
-            args.batch_size,
-            img_size=(args.input_size, args.input_size),
-            augment_fn=augment,
-            allowed_classes=['no', 'yes']  # Only use binary classification classes
-        )
-    else:
-        print("📂 Using raw data (yes/no structure) - will create splits")
-        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
-            args.data_dir,
-            args.batch_size,
-            img_size=(args.input_size, args.input_size),
-            augment_fn=augment,
-            allowed_classes=['no', 'yes']  # Only use binary classification classes
-        )
+    # Define image data generators for train, validation, and test
+    train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+        rescale=1./255,
+        # Apply data augmentation to training data only
+        rotation_range=5,
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        horizontal_flip=True,
+        zoom_range=0.1
+    )
     
+    valid_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    test_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    
+    # Load data from directory structure
+    train_ds = train_datagen.flow_from_directory(
+        os.path.join(args.data_dir, 'train'),
+        target_size=(args.input_size, args.input_size),
+        batch_size=args.batch_size,
+        class_mode='binary',
+        classes=['no', 'yes']
+    )
+    
+    val_ds = valid_datagen.flow_from_directory(
+        os.path.join(args.data_dir, 'val'),
+        target_size=(args.input_size, args.input_size),
+        batch_size=args.batch_size,
+        class_mode='binary',
+        classes=['no', 'yes']
+    )
+    
+    test_ds = test_datagen.flow_from_directory(
+        os.path.join(args.data_dir, 'test'),
+        target_size=(args.input_size, args.input_size),
+        batch_size=args.batch_size,
+        class_mode='binary',
+        classes=['no', 'yes']
+    )
+    
+    class_names = ['no', 'yes']
     print(f"✅ Dataset loaded with classes: {class_names}")
+    print(f"   Found {train_ds.samples} training samples")
+    print(f"   Found {val_ds.samples} validation samples")
+    print(f"   Found {test_ds.samples} test samples")
     
     # === Build Single Optimized ResNet50 Model ===
     input_shape = (args.input_size, args.input_size, 3)

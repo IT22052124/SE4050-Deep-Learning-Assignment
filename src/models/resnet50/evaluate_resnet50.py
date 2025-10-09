@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from src.common.dataset_utils import create_datasets, create_datasets_from_preprocessed
 from src.common.gradcam import generate_gradcam
 
 
@@ -39,11 +38,6 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for evaluation")
     parser.add_argument("--input_size", type=int, default=224, help="Input image size")
     parser.add_argument("--generate_gradcam", action="store_true", help="Generate Grad-CAM visualizations")
-    parser.add_argument(
-        "--use_preprocessed",
-        action="store_true",
-        help="Use preprocessed data with train/val/test folders (if not set, expects raw data with yes/no folders)"
-    )
     
     return parser.parse_args()
 
@@ -70,24 +64,25 @@ def main():
     os.makedirs(os.path.join(args.results_dir, "gradcam"), exist_ok=True)
     
     # === Load Data ===
-    if args.use_preprocessed:
-        print("📂 Using preprocessed data (train/val/test structure)")
-        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets_from_preprocessed(
-            args.data_dir, 
-            batch_size=args.batch_size, 
-            img_size=(args.input_size, args.input_size),
-            allowed_classes=['no', 'yes']  # Only use binary classification classes
-        )
-    else:
-        print("📂 Using raw data (yes/no structure) - will create splits")
-        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
-            args.data_dir, 
-            batch_size=args.batch_size, 
-            img_size=(args.input_size, args.input_size),
-            allowed_classes=['no', 'yes']  # Only use binary classification classes
-        )
+    # Use the preprocessed data directly without additional preprocessing
+    print(f"Loading data from preprocessed directories: {args.data_dir}")
     
+    # Define image data generator for test data
+    test_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    
+    # Load test data from directory structure
+    test_ds = test_datagen.flow_from_directory(
+        os.path.join(args.data_dir, 'test'),
+        target_size=(args.input_size, args.input_size),
+        batch_size=args.batch_size,
+        class_mode='binary',
+        shuffle=False,
+        classes=['no', 'yes']
+    )
+    
+    class_names = ['no', 'yes']
     print(f"✅ Dataset loaded with classes: {class_names}")
+    print(f"   Found {test_ds.samples} test samples")
     
     # === Load Model ===
     model = tf.keras.models.load_model(model_path)
@@ -96,15 +91,21 @@ def main():
     # === Evaluate on Test Set ===
     print("🔍 Evaluating on test set...")
     
-    y_true = []
-    y_pred = []
-    y_pred_proba = []
+    # Reset the test dataset to ensure we start from the beginning
+    test_ds.reset()
     
-    for images, labels in test_ds:
-        predictions = model.predict(images, verbose=0)
-        y_true.extend(labels.numpy())
-        y_pred_proba.extend(predictions.flatten())
-        y_pred.extend((predictions > 0.5).astype(int).flatten())
+    # Get model evaluation
+    evaluation = model.evaluate(test_ds, verbose=1)
+    print(f"Test Loss: {evaluation[0]}, Test Accuracy: {evaluation[1]}")
+    
+    # Get predictions
+    test_ds.reset()
+    y_true = test_ds.classes
+    steps = (test_ds.samples + test_ds.batch_size - 1) // test_ds.batch_size
+    
+    predictions = model.predict(test_ds, steps=steps, verbose=1)
+    y_pred_proba = predictions.flatten()
+    y_pred = (predictions > 0.5).astype(int).flatten()
     
     # Calculate comprehensive metrics
     test_accuracy = accuracy_score(y_true, y_pred)
@@ -166,9 +167,30 @@ def main():
     if args.generate_gradcam:
         print("🔍 Generating Grad-CAM visualizations...")
         try:
+            # Create a TF dataset from some test images for GradCAM
+            test_images = []
+            test_labels = []
+            
+            # Get a batch of images for GradCAM from the test_ds
+            test_ds.reset()  # Reset before getting batch
+            batch_x, batch_y = next(test_ds)
+            
+            # Add batch data to our lists
+            for i in range(len(batch_x)):
+                test_images.append(batch_x[i])
+                test_labels.append(int(batch_y[i]))
+                
+            # Convert to tensors
+            test_images = tf.convert_to_tensor(test_images, dtype=tf.float32)
+            test_labels = tf.convert_to_tensor(test_labels, dtype=tf.int32)
+            
+            # Create a TensorFlow dataset that the original GradCAM function can work with
+            gradcam_ds = tf.data.Dataset.from_tensor_slices((test_images, test_labels))
+            gradcam_ds = gradcam_ds.batch(min(len(test_images), args.batch_size))
+            
             generate_gradcam(
                 model=model, 
-                dataset=test_ds, 
+                dataset=gradcam_ds, 
                 save_dir=os.path.join(args.results_dir, "gradcam"), 
                 class_names=class_names,
                 num_images=5,
@@ -183,31 +205,31 @@ def main():
     sample_count = 0
     max_samples = 12
     
-    for images, labels in test_ds.take(2):
-        predictions = model.predict(images, verbose=0)
+    # Reset the dataset to get fresh samples
+    test_ds.reset()
+    
+    # Get a batch of images to visualize
+    batch_x, batch_y = next(test_ds)
+    predictions = model.predict(batch_x, verbose=0)
+    
+    for i in range(min(len(batch_x), max_samples)):
+        plt.subplot(3, 4, i + 1)
         
-        for i in range(min(len(images), max_samples - sample_count)):
-            if sample_count >= max_samples:
-                break
-                
-            plt.subplot(3, 4, sample_count + 1)
-            plt.imshow(images[i].numpy().astype("uint8"))
-            
-            true_label = class_names[int(labels[i])]
-            pred_prob = predictions[i][0]
-            pred_label = class_names[1] if pred_prob > 0.5 else class_names[0]
-            confidence = pred_prob if pred_prob > 0.5 else (1 - pred_prob)
-            
-            # Color based on correctness
-            color = 'green' if true_label == pred_label else 'red'
-            
-            plt.title(f'True: {true_label}\nPred: {pred_label}\nConf: {confidence:.3f}', 
-                     color=color, fontsize=10)
-            plt.axis('off')
-            sample_count += 1
+        # Images from flow_from_directory are already in the 0-255 range
+        plt.imshow(batch_x[i])
         
-        if sample_count >= max_samples:
-            break
+        # Get true and predicted labels
+        true_label = class_names[int(batch_y[i])]
+        pred_prob = predictions[i][0]
+        pred_label = class_names[1] if pred_prob > 0.5 else class_names[0]
+        confidence = pred_prob if pred_prob > 0.5 else (1 - pred_prob)
+        
+        # Color based on correctness
+        color = 'green' if true_label == pred_label else 'red'
+        
+        plt.title(f'True: {true_label}\nPred: {pred_label}\nConf: {confidence:.3f}', 
+                 color=color, fontsize=10)
+        plt.axis('off')
     
     plt.suptitle('ResNet50 - Sample Predictions', fontsize=16, fontweight='bold')
     plt.tight_layout()
