@@ -13,6 +13,7 @@ import tensorflow as tf
 from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from src.common.gradcam import generate_gradcam
+from tensorflow.keras.applications.resnet50 import preprocess_input
 
 
 def parse_args():
@@ -67,8 +68,8 @@ def main():
     # Use the preprocessed data directly without additional preprocessing
     print(f"Loading data from preprocessed directories: {args.data_dir}")
     
-    # Define image data generator for test data
-    test_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    # Define image data generator for test data with proper ResNet50 preprocessing
+    test_datagen = tf.keras.preprocessing.image.ImageDataGenerator(preprocessing_function=preprocess_input)
     
     # Load test data from directory structure
     test_ds = test_datagen.flow_from_directory(
@@ -202,33 +203,41 @@ def main():
     
     # === Generate Sample Predictions Visualization ===
     plt.figure(figsize=(15, 10))
-    sample_count = 0
     max_samples = 12
-    
-    # Reset the dataset to get fresh samples
-    test_ds.reset()
-    
-    # Get a batch of images to visualize
-    batch_x, batch_y = next(test_ds)
-    predictions = model.predict(batch_x, verbose=0)
-    
-    for i in range(min(len(batch_x), max_samples)):
+
+    # Build a visual-only generator (rescaled for display), then preprocess for prediction
+    vis_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
+    vis_flow = vis_datagen.flow_from_directory(
+        os.path.join(args.data_dir, 'test'),
+        target_size=(args.input_size, args.input_size),
+        batch_size=max_samples,
+        class_mode='binary',
+        shuffle=True,
+        classes=['no', 'yes']
+    )
+
+    batch_x_vis, batch_y_vis = next(vis_flow)
+    # Prepare inputs for model prediction
+    batch_x_pred = preprocess_input(batch_x_vis * 255.0)
+    predictions = model.predict(batch_x_pred, verbose=0)
+
+    for i in range(min(len(batch_x_vis), max_samples)):
         plt.subplot(3, 4, i + 1)
-        
-        # Images from flow_from_directory are already in the 0-255 range
-        plt.imshow(batch_x[i])
-        
+        plt.imshow(batch_x_vis[i])  # nicely scaled [0,1] RGB
+
         # Get true and predicted labels
-        true_label = class_names[int(batch_y[i])]
+        true_label = class_names[int(batch_y_vis[i])]
         pred_prob = predictions[i][0]
         pred_label = class_names[1] if pred_prob > 0.5 else class_names[0]
         confidence = pred_prob if pred_prob > 0.5 else (1 - pred_prob)
-        
+
         # Color based on correctness
         color = 'green' if true_label == pred_label else 'red'
-        
-        plt.title(f'True: {true_label}\nPred: {pred_label}\nConf: {confidence:.3f}', 
-                 color=color, fontsize=10)
+
+        plt.title(
+            f'True: {true_label}\nPred: {pred_label}\nConf: {confidence:.3f}',
+            color=color, fontsize=10
+        )
         plt.axis('off')
     
     plt.suptitle('ResNet50 - Sample Predictions', fontsize=16, fontweight='bold')
