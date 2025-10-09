@@ -9,7 +9,7 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from src.models.resnet50.build_resnet50 import build_resnet50_optimized
+from src.models.resnet50.build_resnet50 import build_resnet50_optimized, unfreeze_resnet50_for_finetuning
 
 
 def parse_args():
@@ -48,18 +48,21 @@ def main():
     print(f"   Epochs: {args.epochs}")
     
     # === Load Data ===
-    # Use the preprocessed data directly without additional preprocessing
+    # Use the preprocessed data directly with STRONGER augmentation
     print(f"Loading data from preprocessed directories: {args.data_dir}")
     
-    # Define image data generators for train, validation, and test
+    # Define image data generators with IMPROVED augmentation for better generalization
     train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
         rescale=1./255,
-        # Apply data augmentation to training data only
-        rotation_range=5,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
+        # Stronger data augmentation
+        rotation_range=20,           # Increased from 5
+        width_shift_range=0.2,       # Increased from 0.1
+        height_shift_range=0.2,      # Increased from 0.1
         horizontal_flip=True,
-        zoom_range=0.1
+        zoom_range=0.2,              # Increased from 0.1
+        shear_range=0.15,            # Added shear
+        brightness_range=[0.8, 1.2], # Added brightness variation
+        fill_mode='nearest'
     )
     
     valid_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
@@ -118,7 +121,7 @@ def main():
         ),
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", 
-            patience=5, 
+            patience=7,  # Increased patience
             restore_best_weights=True,
             verbose=1
         ),
@@ -131,15 +134,80 @@ def main():
         )
     ]
     
-    # === Train ===
-    print(f"🏋️ Training ResNet50 model...")
-    history = model.fit(
+    # === STAGE 1: Train with frozen base (fast initial training) ===
+    print(f"\n{'='*60}")
+    print(f"STAGE 1: Training with frozen ResNet50 base")
+    print(f"{'='*60}")
+    initial_epochs = min(10, args.epochs)  # Train for 10 epochs or less
+    
+    history_stage1 = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=args.epochs,
+        epochs=initial_epochs,
         callbacks=callbacks,
         verbose=1
     )
+    
+    print(f"\n✅ Stage 1 complete!")
+    print(f"   Best validation accuracy: {max(history_stage1.history['val_accuracy']):.4f}")
+    
+    # === STAGE 2: Fine-tune with unfrozen top layers ===
+    if args.epochs > initial_epochs:
+        print(f"\n{'='*60}")
+        print(f"STAGE 2: Fine-tuning with unfrozen top ResNet50 layers")
+        print(f"{'='*60}")
+        
+        # Unfreeze top layers for fine-tuning
+        model = unfreeze_resnet50_for_finetuning(model, learning_rate=0.00001)  # Lower LR for fine-tuning
+        
+        # Update callbacks to save fine-tuned model
+        finetune_callbacks = [
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=os.path.join(args.results_dir, "best_model.h5"),
+                monitor="val_accuracy",
+                save_best_only=True,
+                mode='max',
+                verbose=1
+            ),
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", 
+                patience=5,
+                restore_best_weights=True,
+                verbose=1
+            ),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=2,
+                min_lr=1e-8,
+                verbose=1
+            )
+        ]
+        
+        # Continue training with fine-tuning
+        history_stage2 = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            initial_epoch=initial_epochs,
+            epochs=args.epochs,
+            callbacks=finetune_callbacks,
+            verbose=1
+        )
+        
+        print(f"\n✅ Stage 2 (fine-tuning) complete!")
+        print(f"   Best validation accuracy: {max(history_stage2.history['val_accuracy']):.4f}")
+        
+        # Combine histories
+        history = type('obj', (object,), {
+            'history': {
+                'accuracy': history_stage1.history['accuracy'] + history_stage2.history['accuracy'],
+                'val_accuracy': history_stage1.history['val_accuracy'] + history_stage2.history['val_accuracy'],
+                'loss': history_stage1.history['loss'] + history_stage2.history['loss'],
+                'val_loss': history_stage1.history['val_loss'] + history_stage2.history['val_loss']
+            }
+        })()
+    else:
+        history = history_stage1
     
     # === Save Training Plot ===
     plt.figure(figsize=(12, 4))

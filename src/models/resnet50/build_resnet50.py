@@ -5,29 +5,65 @@ from tensorflow.keras.applications import ResNet50
 
 def build_resnet50_optimized(input_shape=(224, 224, 3)):
     """
-    Optimized ResNet50 model for brain tumor classification.
-    Similar architecture to VGG16 optimized version for fair comparison.
+    Optimized ResNet50 model for brain tumor classification with fine-tuning capability.
+    Two-stage approach: 
+    1. Train with frozen base (fast initial training)
+    2. Unfreeze top layers for fine-tuning (better accuracy)
     """
     base_model = ResNet50(
         include_top=False,
         weights='imagenet',
         input_shape=input_shape
     )
-    base_model.trainable = False  # Freeze base layers for faster training
+    
+    # Initially freeze all base layers
+    base_model.trainable = False
 
     model = models.Sequential([
         base_model,
         layers.GlobalAveragePooling2D(),
-        layers.Dense(256, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dense(512, activation='relu'),
         layers.Dropout(0.5),
+        layers.BatchNormalization(),
+        layers.Dense(256, activation='relu'),
+        layers.Dropout(0.3),
         layers.Dense(1, activation='sigmoid')
     ])
 
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),  # Higher LR for initial training
         loss='binary_crossentropy',
         metrics=['accuracy']
     )
+    return model
+
+
+def unfreeze_resnet50_for_finetuning(model, learning_rate=0.0001):
+    """
+    Unfreeze the top layers of ResNet50 base for fine-tuning.
+    Call this after initial training with frozen base.
+    """
+    # Get the base model (first layer in Sequential)
+    base_model = model.layers[0]
+    
+    # Unfreeze the base model
+    base_model.trainable = True
+    
+    # Freeze all layers except the last 30 (approximately last 2 residual blocks)
+    for layer in base_model.layers[:-30]:
+        layer.trainable = False
+    
+    # Recompile with lower learning rate for fine-tuning
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    print(f"✅ Unfroze last 30 layers of ResNet50 for fine-tuning")
+    print(f"   Trainable layers: {sum([1 for layer in model.layers if layer.trainable])}")
+    
     return model
 
 
