@@ -84,3 +84,55 @@ def create_datasets(data_dir, batch_size=32, img_size=(224,224), augment_fn=None
     va = make_dataset(vaf, val, c, batch_size, False)
     te = make_dataset(tef, tel, c, batch_size, False)
     return tr, va, te, c, counts
+
+
+def create_datasets_from_splits(data_dir, batch_size=32, img_size=(224,224), augment_fn=None, allowed_classes=None):
+    """
+    Load datasets from pre-split train/val/test directories.
+    
+    Parameters:
+        data_dir (str | Path): Root folder containing train/, val/, test/ subdirectories
+        batch_size (int): Batch size for datasets
+        img_size (tuple): Target image size (height, width)
+        augment_fn: Augmentation function to apply to training data
+        allowed_classes (list[str] | None): If provided, only include these class folders
+    
+    Returns:
+        (train_ds, val_ds, test_ds, class_names, class_counts)
+    """
+    import pathlib
+    data_dir = pathlib.Path(data_dir)
+    
+    # Load train data
+    train_dir = data_dir / 'train'
+    train_f, train_l, class_names = load_image_paths(train_dir, allowed_classes)
+    
+    # Load val data
+    val_dir = data_dir / 'val'
+    val_f, val_l, _ = load_image_paths(val_dir, allowed_classes)
+    
+    # Load test data
+    test_dir = data_dir / 'test'
+    test_f, test_l, _ = load_image_paths(test_dir, allowed_classes)
+    
+    # Compute training label counts for class weighting
+    class_to_idx = {name: i for i, name in enumerate(class_names)}
+    train_idx = [class_to_idx[name] for name in train_l]
+    counts = [0] * len(class_names)
+    for i in train_idx:
+        counts[i] += 1
+    
+    print(f"📊 Dataset splits loaded:")
+    print(f"   Train: {len(train_f)} images")
+    print(f"   Val: {len(val_f)} images")
+    print(f"   Test: {len(test_f)} images")
+    print(f"   Classes: {class_names}")
+    print(f"   Class counts in training: {dict(zip(class_names, counts))}")
+    
+    # Create datasets
+    train_ds = make_dataset(train_f, train_l, class_names, batch_size, True, augment_fn)
+    val_ds = make_dataset(val_f, val_l, class_names, batch_size, False, None)
+    test_ds = make_dataset(test_f, test_l, class_names, batch_size, False, None)
+    
+    return train_ds, val_ds, test_ds, class_names, counts
+

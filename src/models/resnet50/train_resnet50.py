@@ -1,7 +1,7 @@
 """
 Training script for ResNet50 brain tumor classification.
 
-Simplified version with single optimized ResNet50 model for easy comparison.
+Optimized to match VGG16's successful training approach with tf.data pipeline.
 """
 
 import os
@@ -9,7 +9,9 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from src.models.resnet50.build_resnet50 import build_resnet50_optimized, unfreeze_resnet50_for_finetuning
+from src.models.resnet50.build_resnet50 import build_resnet50_optimized
+from src.common.dataset_utils import create_datasets_from_splits
+from src.common.preprocessing import get_augmentation_pipeline
 
 
 def parse_args():
@@ -47,57 +49,17 @@ def main():
     print(f"   Batch size: {args.batch_size}")
     print(f"   Epochs: {args.epochs}")
     
-    # === Load Data ===
-    # Use the preprocessed data directly with STRONGER augmentation
-    print(f"Loading data from preprocessed directories: {args.data_dir}")
-    
-    # Define image data generators with IMPROVED augmentation for better generalization
-    train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-        rescale=1./255,
-        # Stronger data augmentation
-        rotation_range=20,           # Increased from 5
-        width_shift_range=0.2,       # Increased from 0.1
-        height_shift_range=0.2,      # Increased from 0.1
-        horizontal_flip=True,
-        zoom_range=0.2,              # Increased from 0.1
-        shear_range=0.15,            # Added shear
-        brightness_range=[0.8, 1.2], # Added brightness variation
-        fill_mode='nearest'
+    # === Load Data (Same as VGG16 but for pre-split directories) ===
+    augment = get_augmentation_pipeline()
+    train_ds, val_ds, test_ds, class_names, class_counts = create_datasets_from_splits(
+        args.data_dir, 
+        args.batch_size, 
+        img_size=(args.input_size, args.input_size), 
+        augment_fn=augment,
+        allowed_classes=['no', 'yes']  # Only use binary classification classes
     )
     
-    valid_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
-    test_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
-    
-    # Load data from directory structure
-    train_ds = train_datagen.flow_from_directory(
-        os.path.join(args.data_dir, 'train'),
-        target_size=(args.input_size, args.input_size),
-        batch_size=args.batch_size,
-        class_mode='binary',
-        classes=['no', 'yes']
-    )
-    
-    val_ds = valid_datagen.flow_from_directory(
-        os.path.join(args.data_dir, 'val'),
-        target_size=(args.input_size, args.input_size),
-        batch_size=args.batch_size,
-        class_mode='binary',
-        classes=['no', 'yes']
-    )
-    
-    test_ds = test_datagen.flow_from_directory(
-        os.path.join(args.data_dir, 'test'),
-        target_size=(args.input_size, args.input_size),
-        batch_size=args.batch_size,
-        class_mode='binary',
-        classes=['no', 'yes']
-    )
-    
-    class_names = ['no', 'yes']
     print(f"✅ Dataset loaded with classes: {class_names}")
-    print(f"   Found {train_ds.samples} training samples")
-    print(f"   Found {val_ds.samples} validation samples")
-    print(f"   Found {test_ds.samples} test samples")
     
     # === Build Single Optimized ResNet50 Model ===
     input_shape = (args.input_size, args.input_size, 3)
@@ -110,7 +72,7 @@ def main():
     with open(os.path.join(args.results_dir, "ResNet50_model_summary.txt"), "w") as f:
         model.summary(print_fn=lambda x: f.write(x + "\n"))
     
-    # === Callbacks ===
+    # === Callbacks (Same as VGG16) ===
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             filepath=os.path.join(args.results_dir, "best_model.h5"),
@@ -121,7 +83,7 @@ def main():
         ),
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", 
-            patience=7,  # Increased patience
+            patience=5, 
             restore_best_weights=True,
             verbose=1
         ),
@@ -134,80 +96,15 @@ def main():
         )
     ]
     
-    # === STAGE 1: Train with frozen base (fast initial training) ===
-    print(f"\n{'='*60}")
-    print(f"STAGE 1: Training with frozen ResNet50 base")
-    print(f"{'='*60}")
-    initial_epochs = min(10, args.epochs)  # Train for 10 epochs or less
-    
-    history_stage1 = model.fit(
+    # === Train (Single-stage like VGG16) ===
+    print(f"🏋️ Training ResNet50 model...")
+    history = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=initial_epochs,
+        epochs=args.epochs,
         callbacks=callbacks,
         verbose=1
     )
-    
-    print(f"\n✅ Stage 1 complete!")
-    print(f"   Best validation accuracy: {max(history_stage1.history['val_accuracy']):.4f}")
-    
-    # === STAGE 2: Fine-tune with unfrozen top layers ===
-    if args.epochs > initial_epochs:
-        print(f"\n{'='*60}")
-        print(f"STAGE 2: Fine-tuning with unfrozen top ResNet50 layers")
-        print(f"{'='*60}")
-        
-        # Unfreeze top layers for fine-tuning
-        model = unfreeze_resnet50_for_finetuning(model, learning_rate=0.00001)  # Lower LR for fine-tuning
-        
-        # Update callbacks to save fine-tuned model
-        finetune_callbacks = [
-            tf.keras.callbacks.ModelCheckpoint(
-                filepath=os.path.join(args.results_dir, "best_model.h5"),
-                monitor="val_accuracy",
-                save_best_only=True,
-                mode='max',
-                verbose=1
-            ),
-            tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss", 
-                patience=5,
-                restore_best_weights=True,
-                verbose=1
-            ),
-            tf.keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=2,
-                min_lr=1e-8,
-                verbose=1
-            )
-        ]
-        
-        # Continue training with fine-tuning
-        history_stage2 = model.fit(
-            train_ds,
-            validation_data=val_ds,
-            initial_epoch=initial_epochs,
-            epochs=args.epochs,
-            callbacks=finetune_callbacks,
-            verbose=1
-        )
-        
-        print(f"\n✅ Stage 2 (fine-tuning) complete!")
-        print(f"   Best validation accuracy: {max(history_stage2.history['val_accuracy']):.4f}")
-        
-        # Combine histories
-        history = type('obj', (object,), {
-            'history': {
-                'accuracy': history_stage1.history['accuracy'] + history_stage2.history['accuracy'],
-                'val_accuracy': history_stage1.history['val_accuracy'] + history_stage2.history['val_accuracy'],
-                'loss': history_stage1.history['loss'] + history_stage2.history['loss'],
-                'val_loss': history_stage1.history['val_loss'] + history_stage2.history['val_loss']
-            }
-        })()
-    else:
-        history = history_stage1
     
     # === Save Training Plot ===
     plt.figure(figsize=(12, 4))

@@ -5,10 +5,8 @@ from tensorflow.keras.applications import ResNet50
 
 def build_resnet50_optimized(input_shape=(224, 224, 3)):
     """
-    Optimized ResNet50 model for brain tumor classification with fine-tuning capability.
-    Two-stage approach: 
-    1. Train with frozen base (fast initial training)
-    2. Unfreeze top layers for fine-tuning (better accuracy)
+    Optimized ResNet50 model matching VGG16's successful architecture.
+    Uses fine-tuning approach with unfrozen last block for best performance.
     """
     base_model = ResNet50(
         include_top=False,
@@ -16,33 +14,35 @@ def build_resnet50_optimized(input_shape=(224, 224, 3)):
         input_shape=input_shape
     )
     
-    # Initially freeze all base layers
-    base_model.trainable = False
+    # Fine-tuning: Unfreeze last 4 layers (similar to VGG16's approach)
+    base_model.trainable = True
+    for layer in base_model.layers[:-4]:
+        layer.trainable = False
 
     model = models.Sequential([
         base_model,
         layers.GlobalAveragePooling2D(),
-        layers.BatchNormalization(),
         layers.Dense(512, activation='relu'),
-        layers.Dropout(0.5),
         layers.BatchNormalization(),
+        layers.Dropout(0.5),
         layers.Dense(256, activation='relu'),
         layers.Dropout(0.3),
         layers.Dense(1, activation='sigmoid')
     ])
 
+    # Use same learning rate as VGG16 for consistency
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),  # Higher LR for initial training
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.00001),
         loss='binary_crossentropy',
         metrics=['accuracy']
     )
     return model
 
 
-def unfreeze_resnet50_for_finetuning(model, learning_rate=0.0001):
+def unfreeze_resnet50_for_finetuning(model, learning_rate=0.00001):
     """
-    Unfreeze the top layers of ResNet50 base for fine-tuning.
-    Call this after initial training with frozen base.
+    DEPRECATED: No longer needed as we now use single-stage fine-tuning.
+    Kept for backward compatibility.
     """
     # Get the base model (first layer in Sequential)
     base_model = model.layers[0]
