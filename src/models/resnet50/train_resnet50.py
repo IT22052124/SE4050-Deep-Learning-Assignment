@@ -29,8 +29,8 @@ def parse_args():
         help="Directory to save results",
     )
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
-    parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
-    parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate")
+    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs (increased for better convergence)")
+    parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate (optimized for fine-tuning)")
     parser.add_argument("--input_size", type=int, default=224, help="Input image size (224 recommended for ResNet50)")
     
     return parser.parse_args()
@@ -72,7 +72,7 @@ def main():
     with open(os.path.join(args.results_dir, "ResNet50_model_summary.txt"), "w") as f:
         model.summary(print_fn=lambda x: f.write(x + "\n"))
     
-    # === Callbacks (Same as VGG16) ===
+    # === Callbacks - ENHANCED for 95%+ accuracy ===
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             filepath=os.path.join(args.results_dir, "best_model.h5"),
@@ -83,26 +83,43 @@ def main():
         ),
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", 
-            patience=5, 
+            patience=8,  # Increased from 5 to 8 for better convergence
             restore_best_weights=True,
             verbose=1
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
-            factor=0.5,
-            patience=3,
+            factor=0.5,  # Reduce by half when plateau
+            patience=4,  # Increased from 3 to 4
             min_lr=1e-7,
             verbose=1
+        ),
+        # NEW: Learning rate warmup for stable training
+        tf.keras.callbacks.LearningRateScheduler(
+            lambda epoch: args.learning_rate * (0.1 if epoch < 3 else 1.0),
+            verbose=0
         )
     ]
     
     # === Train (Single-stage like VGG16) ===
     print(f"🏋️ Training ResNet50 model...")
+    
+    # Calculate class weights to handle imbalance
+    total_samples = sum(class_counts)
+    n_classes = len(class_counts)
+    class_weight = {}
+    for i, count in enumerate(class_counts):
+        if count > 0:
+            class_weight[i] = total_samples / (n_classes * count)
+    
+    print(f"📊 Class weights: {class_weight}")
+    
     history = model.fit(
         train_ds,
         validation_data=val_ds,
         epochs=args.epochs,
         callbacks=callbacks,
+        class_weight=class_weight,  # NEW: Handle class imbalance
         verbose=1
     )
     
