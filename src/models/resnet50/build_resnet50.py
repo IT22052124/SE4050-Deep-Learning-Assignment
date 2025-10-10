@@ -189,6 +189,8 @@ def build_resnet50_frozen_head(input_shape=(224, 224, 3),
     outputs = layers.Dense(1, activation='sigmoid')(x)
 
     model = models.Model(inputs=base_model.input, outputs=outputs, name='ResNet50_frozen_head')
+    # Attach backbone reference for reliable fine-tuning later
+    setattr(model, '_backbone', base_model)
 
     loss = tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
     model.compile(
@@ -208,29 +210,34 @@ def fine_tune_resnet50(model, trainable_layers=50, learning_rate=1e-5, label_smo
     Optionally keep BatchNorm layers frozen (recommended for small datasets).
     Recompiles the model with a lower LR.
     """
-    base_model = None
-    # Find the ResNet50 base model inside either Sequential or Functional models
-    if isinstance(model, models.Sequential):
-        base_model = model.layers[0]
-    else:
-        # Attempt to find a ResNet50 by name
-        for l in model.layers:
-            if isinstance(l, tf.keras.Model) and 'resnet50' in l.name.lower():
-                base_model = l
-                break
-        if base_model is None:
-            # Fallback: first layer
-            base_model = model.layers[0]
+    # Prefer using the stored backbone reference
+    base_model = getattr(model, '_backbone', None)
 
-    # Unfreeze
-    base_model.trainable = True
-    # Freeze all up to the last `trainable_layers`
-    for layer in base_model.layers[:-trainable_layers]:
-        layer.trainable = False
-    if freeze_batchnorm:
-        for layer in base_model.layers:
-            if isinstance(layer, layers.BatchNormalization):
-                layer.trainable = False
+    if base_model is not None:
+        base_model.trainable = True
+        # Freeze all but the last `trainable_layers` of the backbone
+        for layer in base_model.layers[:-trainable_layers]:
+            layer.trainable = False
+        if freeze_batchnorm:
+            for layer in base_model.layers:
+                if isinstance(layer, layers.BatchNormalization):
+                    layer.trainable = False
+    else:
+        # Robust fallback: operate directly on model layers
+        # Consider Conv2D and related backbone layers; skip Dense/Dropout/BN in the head
+        backbone_layers = [l for l in model.layers if isinstance(l, (layers.Conv2D, layers.BatchNormalization))]
+        # Unfreeze the last `trainable_layers` backbone layers
+        for i, l in enumerate(backbone_layers):
+            # Default freeze
+            l.trainable = False
+        for l in backbone_layers[-trainable_layers:]:
+            # Unfreeze selected
+            l.trainable = True
+        if freeze_batchnorm:
+            # Ensure BN stay frozen
+            for l in backbone_layers:
+                if isinstance(l, layers.BatchNormalization):
+                    l.trainable = False
 
     loss = tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
     model.compile(
