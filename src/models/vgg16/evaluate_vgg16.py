@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from src.common.dataset_utils import create_datasets
+from src.common.dataset_utils import create_datasets, create_datasets_from_preprocessed
 from src.common.gradcam import generate_gradcam
 
 
@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for evaluation")
     parser.add_argument("--input_size", type=int, default=224, help="Input image size")
     parser.add_argument("--generate_gradcam", action="store_true", help="Generate Grad-CAM visualizations")
+    parser.add_argument("--use_preprocessed", action="store_true", help="Use preprocessed data with existing train/val/test splits")
     
     return parser.parse_args()
 
@@ -65,12 +66,22 @@ def main():
     os.makedirs(os.path.join(args.results_dir, "gradcam"), exist_ok=True)
     
     # === Load Data ===
-    train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
-        args.data_dir, 
-        batch_size=args.batch_size, 
-        img_size=(args.input_size, args.input_size),
-        allowed_classes=['no', 'yes']  # Only use binary classification classes
-    )
+    if args.use_preprocessed:
+        print("📁 Using preprocessed data with existing train/val/test splits")
+        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets_from_preprocessed(
+            args.data_dir, 
+            batch_size=args.batch_size, 
+            img_size=(args.input_size, args.input_size),
+            allowed_classes=['no', 'yes']  # Only use binary classification classes
+        )
+    else:
+        print("📁 Using raw data - creating new train/val/test splits")
+        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
+            args.data_dir, 
+            batch_size=args.batch_size, 
+            img_size=(args.input_size, args.input_size),
+            allowed_classes=['no', 'yes']  # Only use binary classification classes
+        )
     
     print(f"✅ Dataset loaded with classes: {class_names}")
     

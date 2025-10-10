@@ -10,7 +10,7 @@ import argparse
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from src.models.vgg16.build_vgg16 import build_vgg16_optimized
-from src.common.dataset_utils import create_datasets
+from src.common.dataset_utils import create_datasets, create_datasets_from_preprocessed
 from src.common.preprocessing import get_augmentation_pipeline
 
 
@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--input_size", type=int, default=224, help="Input image size (224 recommended for VGG16)")
+    parser.add_argument("--use_preprocessed", action="store_true", help="Use preprocessed data with existing train/val/test splits")
     
     return parser.parse_args()
 
@@ -51,13 +52,25 @@ def main():
     
     # === Load Data ===
     augment = get_augmentation_pipeline()
-    train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
-        args.data_dir, 
-        args.batch_size, 
-        img_size=(args.input_size, args.input_size), 
-        augment_fn=augment,
-        allowed_classes=['no', 'yes']  # Only use binary classification classes
-    )
+    
+    if args.use_preprocessed:
+        print("📁 Using preprocessed data with existing train/val/test splits")
+        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets_from_preprocessed(
+            args.data_dir, 
+            args.batch_size, 
+            img_size=(args.input_size, args.input_size), 
+            augment_fn=augment,
+            allowed_classes=['no', 'yes']  # Only use binary classification classes
+        )
+    else:
+        print("📁 Using raw data - creating new train/val/test splits")
+        train_ds, val_ds, test_ds, class_names, class_counts = create_datasets(
+            args.data_dir, 
+            args.batch_size, 
+            img_size=(args.input_size, args.input_size), 
+            augment_fn=augment,
+            allowed_classes=['no', 'yes']  # Only use binary classification classes
+        )
     
     print(f"✅ Dataset loaded with classes: {class_names}")
     
