@@ -85,6 +85,55 @@ def create_datasets(data_dir, batch_size=32, img_size=(224,224), augment_fn=None
     te = make_dataset(tef, tel, c, batch_size, False)
     return tr, va, te, c, counts
 
+def create_datasets_from_preprocessed(data_dir, batch_size=32, img_size=(224,224), augment_fn=None, allowed_classes=['no', 'yes']):
+    """
+    Load datasets from preprocessed data with existing train/val/test splits.
+    
+    Expected structure:
+    data_dir/
+    ├── train/
+    │   ├── yes/
+    │   └── no/
+    ├── val/
+    │   ├── yes/
+    │   └── no/
+    └── test/
+        ├── yes/
+        └── no/
+    """
+    import pathlib
+    
+    data_dir = pathlib.Path(data_dir)
+    
+    # Load training data
+    train_dir = data_dir / "train"
+    trf, trl, c = load_image_paths(train_dir, allowed_classes=allowed_classes)
+    
+    # Load validation data
+    val_dir = data_dir / "val"
+    vaf, val, _ = load_image_paths(val_dir, allowed_classes=allowed_classes)
+    
+    # Load test data
+    test_dir = data_dir / "test"
+    tef, tel, _ = load_image_paths(test_dir, allowed_classes=allowed_classes)
+    
+    # Compute training label counts for class weighting
+    class_to_idx = {name: i for i, name in enumerate(c)}
+    tr_idx = [class_to_idx[name] for name in trl]
+    counts = [0] * len(c)
+    for i in tr_idx:
+        counts[i] += 1
+    
+    print(f"Preprocessed dataset loaded:")
+    print(f"  Train: {len(trf)} images")
+    print(f"  Val: {len(vaf)} images") 
+    print(f"  Test: {len(tef)} images")
+    
+    tr = make_dataset(trf, trl, c, batch_size, True, augment_fn)
+    va = make_dataset(vaf, val, c, batch_size, False)
+    te = make_dataset(tef, tel, c, batch_size, False)
+    return tr, va, te, c, counts
+
 
 def create_datasets_from_splits(data_dir, batch_size=32, img_size=(224,224), augment_fn=None, allowed_classes=None):
     """
